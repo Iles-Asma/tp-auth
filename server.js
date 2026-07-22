@@ -1,51 +1,39 @@
-const express =  require('exprrss');
-const bcrypt = require('bcrypt');
-const db = require('./db');
+require('dotenv').config();
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const path = require('path');
+const db = require('./config/db');
+const authRouter = require('./routes/auth');
+const apiRouter = require('./routes/api');
 
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
+// Middlewares
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use(express.static('public'));
 
-app.post('/register', async (req, res)=>{
-    const {username,password} = res.body
+// Routes d'authentification
+app.use('/auth', authRouter);
 
-    const hash = await bcrypt.hash(password, 10);
+// Routes API
+app.use('/', apiRouter);
 
-    try {
-        const insert = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
-        insert.run(username, hash);
-        res.status(201).json({message: 'User registered successfully'});
-    }catch (err) {
-      res.status(400).json({message: 'Username already exists'});
+// Redirection par défaut
+app.get('/', (req, res) => {
+    // Vérifier si le token existe dans les cookies
+    if (req.cookies.token) {
+        res.redirect('/bat-computer');
+    } else {
+        res.redirect('/auth/login');
     }
-    
-})
+});
 
-const PORT = 3000;
+// Démarrage du serveur
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`🦇 Serveur Batcave lancé sur http://localhost:${PORT}`);
 });
 
-const checkAuth = async (req, res, next) => {
-    const authHeader = req.headers.authorization
 
-    if (!authHeader || !authHeader.startsWith('Basic ')) {
-        res.setheader('WWW-Authenticate', 'Basic realm="Administration"');
-        return res.status(401).send('Authentication requise');
-    }
-    const base64 = authHeader.split(' ')[1];
-    const [username, password] = Buffer.from(base64, 'base64').toString().split(':');
-
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-    if (user && (await bcrypt.compare(password, user.password_hash))) {
-        req.user = user;
-        next();
-    }else {
-        return res.status(401).send('identifiants invalides');
-    }
-}
-
-app.get('/admin-page', checkAuth, (req, res) => {
-    res.sendFile(__dirname + '/public/admin-page.html');
-});
